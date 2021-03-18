@@ -18,25 +18,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #ifndef MSQUEUE_H
 #define MSQUEUE_H
-
-#include <ortp/str_utils.h>
-#include <mediastreamer2/mscommon.h>
-
-
-typedef struct _MSCPoint{
-	struct _MSFilter *filter;
-	int pin;
-} MSCPoint;
+#include "str_utils.h"
+#include "mscommon.h"
 
 typedef struct _MSQueue
 {
 	queue_t q;
-	MSCPoint prev;
-	MSCPoint next;
 }MSQueue;
 
 
-MS2_PUBLIC MSQueue * ms_queue_new(struct _MSFilter *f1, int pin1, struct _MSFilter *f2, int pin2 );
+MSQueue * ms_queue_new();
 
 static MS2_INLINE mblk_t *ms_queue_get(MSQueue *q){
 	return getq(&q->q);
@@ -79,11 +70,11 @@ extern "C"
 /*yes these functions need to be public for plugins to work*/
 
 /*init a queue on stack*/
-MS2_PUBLIC void ms_queue_init(MSQueue *q);
+void ms_queue_init(MSQueue *q);
 
-MS2_PUBLIC void ms_queue_flush(MSQueue *q);
+void ms_queue_flush(MSQueue *q);
 
-MS2_PUBLIC void ms_queue_destroy(MSQueue *q);
+void ms_queue_destroy(MSQueue *q);
 
 
 #define __mblk_set_flag(m,pos,bitval) \
@@ -119,35 +110,35 @@ struct _MSBufferizer{
 typedef struct _MSBufferizer MSBufferizer;
 
 /*allocates and initialize */
-MS2_PUBLIC MSBufferizer * ms_bufferizer_new(void);
+MSBufferizer * ms_bufferizer_new(void);
 
 /*initialize in memory */
-MS2_PUBLIC void ms_bufferizer_init(MSBufferizer *obj);
+void ms_bufferizer_init(MSBufferizer *obj);
 
-MS2_PUBLIC void ms_bufferizer_put(MSBufferizer *obj, mblk_t *m);
+void ms_bufferizer_put(MSBufferizer *obj, mblk_t *m);
 
 /* put every mblk_t from q, into the bufferizer */
-MS2_PUBLIC void ms_bufferizer_put_from_queue(MSBufferizer *obj, MSQueue *q);
+void ms_bufferizer_put_from_queue(MSBufferizer *obj, MSQueue *q);
 
 /*read bytes from bufferizer object*/
-MS2_PUBLIC int ms_bufferizer_read(MSBufferizer *obj, uint8_t *data, int datalen);
+int ms_bufferizer_read(MSBufferizer *obj, uint8_t *data, int datalen);
 
 /*obtain current meta-information of the last read bytes (if any) and copy them into 'm'*/
-MS2_PUBLIC void ms_bufferizer_fill_current_metas(MSBufferizer *obj, mblk_t *m);
+void ms_bufferizer_fill_current_metas(MSBufferizer *obj, mblk_t *m);
 
 /* returns the number of bytes available in the bufferizer*/
 static MS2_INLINE int ms_bufferizer_get_avail(MSBufferizer *obj){
 	return obj->size;
 }
 
-MS2_PUBLIC void ms_bufferizer_skip_bytes(MSBufferizer *obj, int bytes);
+void ms_bufferizer_skip_bytes(MSBufferizer *obj, int bytes);
 
 /* purge all data pending in the bufferizer */
-MS2_PUBLIC void ms_bufferizer_flush(MSBufferizer *obj);
+void ms_bufferizer_flush(MSBufferizer *obj);
 
-MS2_PUBLIC void ms_bufferizer_uninit(MSBufferizer *obj);
+void ms_bufferizer_uninit(MSBufferizer *obj);
 
-MS2_PUBLIC void ms_bufferizer_destroy(MSBufferizer *obj);
+void ms_bufferizer_destroy(MSBufferizer *obj);
 
 #ifdef __cplusplus
 }

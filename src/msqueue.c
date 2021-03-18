@@ -17,30 +17,17 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#if defined(HAVE_CONFIG_H)
-#include "mediastreamer-config.h"
-#endif
 
-#include "mediastreamer2/msqueue.h"
-#include "mediastreamer2/msvideo.h"
+#include "msqueue.h"
 #include <string.h>
 
-
-MSQueue * ms_queue_new(struct _MSFilter *f1, int pin1, struct _MSFilter *f2, int pin2 ){
+MSQueue * ms_queue_new(){
 	MSQueue *q=(MSQueue*)ms_new0(MSQueue,1);
 	qinit(&q->q);
-	q->prev.filter=f1;
-	q->prev.pin=pin1;
-	q->next.filter=f2;
-	q->next.pin=pin2;
 	return q;
 }
 
 void ms_queue_init(MSQueue *q){
-	q->prev.filter=0;
-	q->prev.pin=0;
-	q->next.filter=0;
-	q->next.pin=0;
 	qinit(&q->q);
 }
 
@@ -114,7 +101,7 @@ void ms_bufferizer_fill_current_metas(MSBufferizer *obj, mblk_t *dest){
 #if defined(ORTP_TIMESTAMP)
 	dest->timestamp = source->timestamp;
 #endif
-	dest->ttl_or_hl = source->ttl_or_hl;
+//	dest->ttl_or_hl = source->ttl_or_hl;
 }
 
 void ms_bufferizer_skip_bytes(MSBufferizer *obj, int bytes){

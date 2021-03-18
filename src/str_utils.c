@@ -17,7 +17,8 @@
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-#include "ortp/str_utils.h"
+#include <string.h>
+#include "str_utils.h"
 
 
 void qinit(queue_t *q){
