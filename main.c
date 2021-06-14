@@ -1,153 +1,292 @@
-/*通过模拟flac解码器filter来展示一下MSQueue和MSBuffer用法*/
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-#include <pthread.h>
+#include <stdlib.h>
 #include "msqueue.h"
 
 
-typedef struct MSFilter
+typedef struct
 {
-	void *priv_data;
-}MSFilter;
+	MSQueue **inputs;
+	MSQueue **outputs;
+	void *data; 			/*私有数据*/
+}Step;
 
-typedef struct MSFlacEncInfo
+
+typedef struct
 {
-	MSBufferizer encoder_before;
-	MSQueue 	 encoder_after;
-	pthread_t enc_thread;
-	int state;
-	FILE *fp;
-}MSFlacEncInfo;
+	Step first;
+	Step second;
+	Step third;
+}Global;
 
-static const char *file = NULL;
-static void *flac_enc_thread(void *arg);
 
-static void flac_enc_init(MSFilter *f)
+static int first_step_init(Step *first)
 {
-	MSFlacEncInfo *d = ms_new0(MSFlacEncInfo, 1);
-	ms_bufferizer_init(&d->encoder_before);
-	ms_queue_init(&d->encoder_after);
-	d->state = 1;
-	pthread_create(&d->enc_thread, NULL, flac_enc_thread, f);
-	d->fp = fopen(file, "rb");
-	f->priv_data = d;
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (first == NULL)
+	{
+		printf("%s failed.\n", __func__);
+		exit(-1);
+	}
+
+	first->outputs = (MSQueue **)ms_new0(MSQueue *, 1);
+	if (first->outputs == NULL)
+	{
+		printf("%s : ms_new0 for outputs failed.\n", __func__);
+		exit(-1);
+	}
+
+	return 0;
 }
 
-static void flac_enc_precess(MSFilter *f)
+static int first_step_process(Step *first)
 {
-	int len = 16000 * 10 / 1000 * 2; 	/*10ms数据*/
-	MSFlacEncInfo *d = (MSFlacEncInfo *)f->priv_data;
+	mblk_t *om = NULL;
+	char *data = "hello";
+	int len = strlen(data) + 1;
+
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (first == NULL)
+	{
+		printf("%s failed.\n", __func__);
+		exit(0);
+	}
+
+	/*put数据，实际可能会比这复杂*/
+	om = allocb(len, 0);
+	memcpy(om->b_wptr, data, len);
+	om->b_wptr += len;
+	ms_queue_put(first->outputs[0], om);
+
+	return 0;
+}
+
+static int first_step_uninit(Step *first)
+{
+	if (first == NULL)
+	{
+		printf("%s failed.\n", __func__);
+		exit(0);
+	}
+	
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (first->outputs != NULL)
+	{
+		ms_free(first->outputs);
+	}
+
+	return 0;
+}
+
+
+static int second_step_init(Step *second)
+{
+	if (second == NULL)
+	{
+		printf("%s failed.\n", __func__);
+		exit(-1);
+	}
+
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	second->inputs = (MSQueue **)ms_new0(MSQueue *, 1);
+	second->outputs = (MSQueue **)ms_new0(MSQueue *, 1);
+	if (second->inputs == NULL || second->outputs == NULL)
+	{
+		printf("%s : ms_new0 for inputs || outputs failed.\n", __func__);
+		exit(-1);
+	}
+
+	return 0;
+}
+
+static int second_step_process(Step *second)
+{
 	mblk_t *im = NULL;
 	mblk_t *om = NULL;
+	char *data = "world";
+	int len = strlen(data) + 1;
 
-	if (feof(d->fp) == 0)
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (second == NULL)
 	{
-		int ret = 0;
-		im = allocb(len, 0);
-		if (im != NULL)
-		{
-			ret = fread(im->b_wptr, 1, len, d->fp); 		/*填充mblk_t,从b_wptr开始写*/
-			im->b_wptr += ret; 								/*b_wptr向后移这么多字节*/
-			ms_bufferizer_put(&d->encoder_before, im);
-		}
+		printf("%s failed.\n", __func__);
+		exit(-1);
 	}
 
-	while (om = ms_queue_get(&d->encoder_after)) 			/*从队列中取一个mblk_t*/
+	while ((im = ms_queue_get(second->inputs[0])) != NULL)
 	{
-		int size = om->b_wptr - om->b_rptr;
-		printf("->> %s : size = [%d]\n", __func__, size);
+		int size = im->b_wptr - im->b_rptr + len;
 
-		msgpullup(om, -1); 									/*将b_cont后面所有的数据合并到一个mblk_t中*/
+		printf("\t%s : get data is [%s]\n", __func__, im->b_rptr);
 
-		size = om->b_wptr - om->b_rptr;
-		printf("->> %s : msgpullup after size = [%d]\n", __func__, size);
-
-		printf("->> %s : data = [%s].\n", __func__, om->b_rptr); /*从b_rptr开始读*/
-		freemsg(om);
+		/*get到数据处理之后再put出去*/
+		om = allocb(size, 0);
+		snprintf(om->b_wptr, size, "%s-%s", im->b_rptr, data);
+		om->b_wptr += size;
+		ms_queue_put(second->outputs[0], om);
+		freemsg(im);
 	}
+
+	return 0;
+}
+
+static int second_step_uninit(Step *second)
+{
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (second == NULL)
+	{
+		printf("%s failed.\n", __func__);
+		exit(-1);
+	}
+
+	if (second->inputs) ms_free(second->inputs);
+	if (second->outputs) ms_free(second->outputs);
+
+	return 0;
 }
 
 
-static void flac_enc_uninit(MSFilter *f)
+static int third_step_init(Step *third)
 {
-	MSFlacEncInfo *d = (MSFlacEncInfo *)f->priv_data;
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (third == NULL)
+	{
+		printf("%s failed.\n", __func__);
+		exit(-1);
+	}
 
-	d->state = 0;
-	if (d->enc_thread)
+	third->inputs = (MSQueue **)ms_new0(MSQueue *, 1);
+	if (third->inputs == NULL)
 	{
-		pthread_join(d->enc_thread, NULL);
-		printf("->> %s : flac encoder thread has join.\n", __func__);
+		printf("%s : ms_new0 for inputs failed.\n", __func__);
+		exit(-1);
 	}
-	if (d->fp != NULL)
-	{
-		fclose(d->fp);
-	}
-	ms_queue_flush(&d->encoder_after);
-	ms_bufferizer_flush(&d->encoder_before);
-	ms_free(d);
+
+	return 0;
 }
 
-
-
-static void *flac_enc_thread(void *arg)
+static int third_step_process(Step *third)
 {
-	int len = 1152 * 2;
-	char buf[1152*2];
-	int ret = -1;
-	MSFilter *f = (MSFilter *)arg;
-	MSFlacEncInfo *d = (MSFlacEncInfo *)f->priv_data;
 	mblk_t *im = NULL;
-	mblk_t *cont = NULL;
 
-	while (d->state == 1)
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (third == NULL)
 	{
-		while (ms_bufferizer_get_avail(&d->encoder_before) >= len) 			/*缓冲buffer中可用的总字节数*/
-		{
-			memset(buf, 0, sizeof(buf));
-			ret = ms_bufferizer_read(&d->encoder_before, buf, len); 		/*从buffer中读len个字节*/
-			printf("->> %s : read %d data.\n", __func__, ret);
-
-			im = allocb(sizeof("after"), 0);
-			memcpy(im->b_wptr, "after", sizeof("after"));
-			im->b_wptr += sizeof("after");
-
-			cont = allocb(sizeof("+encoder"), 0);
-			memcpy(cont->b_wptr, "+encoder", sizeof("+encoder"));
-			cont->b_wptr += sizeof("+encoder");
-			cont->b_cont = NULL;
-			
-			im->b_cont = cont;
-			ms_queue_put(&d->encoder_after, im);
-		}
-		usleep(12*1000);
+		printf("%s failed.\n", __func__);
+		exit(0);
 	}
 
+	while ((im = ms_queue_get(third->inputs[0])) != NULL)
+	{
+		printf("\t%s : get data is [%s]\n", __func__, im->b_rptr);	
+		freemsg(im);	
+	}
+
+	return 0;
 }
 
+static int third_step_uninit(Step *third)
+{
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (third == NULL)
+	{
+		printf("%s failed.\n", __func__);
+		exit(0);
+	}
+
+	if (third->inputs) ms_free(third->inputs);
+
+	return 0;
+}
+
+
+static int link(Step *f1, int pin1, Step *f2, int pin2)
+{
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	MSQueue *q = NULL;
+	q = ms_queue_new();
+	f1->outputs[pin1] = q;
+	f2->inputs[pin2] = q;
+	return 0;
+}
+
+static int init(Global *g)
+{
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (g == NULL)
+	{
+		printf("%s : global data is NULL.\n");
+		exit(0);
+	}
+
+	first_step_init(&g->first);
+	second_step_init(&g->second);
+	third_step_init(&g->third);
+
+	link(&g->first, 0, &g->second, 0);
+	link(&g->second, 0, &g->third, 0);
+
+	return 0;
+}
+
+
+static int process(Global *g)
+{
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (g == NULL)
+	{
+		printf("%s : global data is NULL.\n");
+		exit(0);
+	}
+
+	/*一般这里可以创建线程循环处理，每次循环一圈，就有一部分数据处理完成*/
+	first_step_process(&g->first);
+	second_step_process(&g->second);
+	third_step_process(&g->third);
+
+	return 0;
+}
+
+
+static unlink(Step *f1, int pin1, Step *f2, int pin2)
+{
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	MSQueue *q = NULL;
+	q = f1->outputs[pin1];
+	f1->outputs[pin1] = f2->inputs[pin2] = NULL;
+	ms_queue_destroy(q);
+	return 0;
+}
+
+static destroy(Global *g)
+{
+	printf("%s : %s : %d\n", __FILE__, __func__, __LINE__);
+	if (g == NULL)
+	{
+		printf("%s : global data is NULL.\n");
+		exit(0);
+	}
+
+	unlink(&g->first, 0, &g->second, 0);
+	unlink(&g->second, 0, &g->third, 0);
+
+	first_step_uninit(&g->first);
+	second_step_uninit(&g->second);
+	third_step_uninit(&g->third);
+
+	return 0;
+}
 
 
 
 int main(int argc, const char *argv[])
 {
-	MSFilter f;
-	FILE *fp = NULL;
-	if (argc < 2)
-	{
-		printf("Usage: %s <inputfile>.\n", argv[0]);
-		return -1;
-	}
-	file = argv[1];
+	Global g;
+	memset(&g, 0, sizeof(Global));
 
-	flac_enc_init(&f);
-
-	fp = ((MSFlacEncInfo *)f.priv_data)->fp;
-	while (feof(fp) == 0)
-	{
-		flac_enc_precess(&f);
-		usleep(10*1000);
-	}
-
-	flac_enc_uninit(&f);
+	init(&g);
+	process(&g);
+	destroy(&g);
+	
 	return 0;
 }
